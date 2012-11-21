@@ -23,7 +23,7 @@ unless process.platform is 'win32'
 
 # Make sure that uncaught exceptions don't kill the REPL.
 process.on 'uncaughtException', (err) ->
-  stdout.write (err.stack or err.toString()) + '\n'
+  process.stdout.write (err.stack or err.toString()) + '\n'
 
 ## Autocompletion
 
