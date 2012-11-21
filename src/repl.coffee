@@ -214,4 +214,8 @@ class REPLServer
       rli = readline.createInterface input, output, autocomplete
     return rli
 
-new REPLServer().start()
+module.exports =
+  REPLServer: REPLServer
+
+  start: ->
+    new REPLServer().start()
