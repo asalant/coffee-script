@@ -83,92 +83,99 @@ class REPLServer
     # The current backlog of multi-line code.
     backlog = ''
 
-    @eval = options.eval or (code) ->
-      CoffeeScript.eval "_=(#{code}\n)", {
-        filename: 'repl'
-        modulename: 'repl'
-      }
+    # Context property name to storage last value. '_' by default
+    @lastValueKey = options.lastValueKey or '_'
 
-    if stdin.readable and stdin.isRaw
-      @rli = @createPipedInterface(stdin)
+    # Basic implementation of eval-ing a line/block of input
+    # May be overridden
+    @eval = options.eval or (code, context, filename, modulename, callback) ->
+      try
+        returnValue = CoffeeScript.eval "(#{code}\n)", {
+          filename: filename
+          modulename: modulename
+          sandbox: context
+        }
+        callback null, returnValue
+      catch err
+        callback err
+
+    @rli = rli = if stdin.readable and stdin.isRaw
+      @createPipedInterface(stdin)
     else
-      @rli = @createReadlineInterface()
+      @createReadlineInterface()
 
     # Handle multi-line mode switch
-    @rli.input.on 'keypress', (char, key) =>
+    rli.input.on 'keypress', (char, key) ->
       # test for Ctrl-v
       return unless key and key.ctrl and not key.meta and not key.shift and key.name is 'v'
-      cursorPos = @rli.cursor
-      @rli.output.cursorTo 0
-      @rli.output.clearLine 1
+      cursorPos = rli.cursor
+      rli.output.cursorTo 0
+      rli.output.clearLine 1
       multilineMode = not multilineMode
-      @rli._line() if not multilineMode and backlog
+      rli._line() if not multilineMode and backlog
       backlog = ''
-      @rli.setPrompt (newPrompt = if multilineMode then REPL_PROMPT_MULTILINE else REPL_PROMPT)
-      @rli.prompt()
-      @rli.output.cursorTo newPrompt.length + (@rli.cursor = cursorPos)
+      rli.setPrompt (newPrompt = if multilineMode then REPL_PROMPT_MULTILINE else REPL_PROMPT)
+      rli.prompt()
+      rli.output.cursorTo newPrompt.length + (rli.cursor = cursorPos)
 
     # Handle Ctrl-d press at end of last line in multiline mode
-    @rli.input.on 'keypress', (char, key) =>
-      return unless multilineMode and @rli.line
+    rli.input.on 'keypress', (char, key) ->
+      return unless multilineMode and rli.line
       # test for Ctrl-d
       return unless key and key.ctrl and not key.meta and not key.shift and key.name is 'd'
       multilineMode = off
-      @rli._line()
+      rli._line()
 
-    @rli.on 'attemptClose', =>
+    rli.on 'attemptClose', =>
       if multilineMode
         multilineMode = off
-        @rli.output.cursorTo 0
-        @rli.output.clearLine 1
-        @rli._onLine @rli.line
+        rli.output.cursorTo 0
+        rli.output.clearLine 1
+        rli._onLine rli.line
         return
-      if backlog or @rli.line
+      if backlog or rli.line
         backlog = ''
-        @rli.historyIndex = -1
-        @rli.setPrompt REPL_PROMPT
-        @rli.output.write '\n(^C again to quit)'
-        @rli._line (@rli.line = '')
+        rli.historyIndex = -1
+        rli.setPrompt REPL_PROMPT
+        rli.output.write '\n(^C again to quit)'
+        rli._line (rli.line = '')
       else
-        @rli.close()
+        rli.close()
 
-    @rli.on 'close', =>
-      @rli.output.write '\n'
-      @rli.input.destroy()
+    rli.on 'close', ->
+      rli.output.write '\n'
+      rli.input.destroy()
 
     # The main REPL function. Called every time a line of code is entered.
     # Attempt to evaluate the command. If there's an exception, print it out instead
     # of exiting.
-    @rli.on 'line', (buffer) =>
+    rli.on 'line', (buffer) =>
       # remove single-line comments
       buffer = buffer.replace /(^|[\r\n]+)(\s*)##?(?:[^#\r\n][^\r\n]*|)($|[\r\n])/, "$1$2$3"
       # remove trailing newlines
       buffer = buffer.replace /[\r\n]+$/, ""
       if multilineMode
         backlog += "#{buffer}\n"
-        @rli.setPrompt REPL_PROMPT_CONTINUATION
-        @rli.prompt()
+        rli.setPrompt REPL_PROMPT_CONTINUATION
+        rli.prompt()
         return
       if !buffer.toString().trim() and !backlog
-        @rli.prompt()
+        rli.prompt()
         return
       code = backlog += buffer
       if code[code.length - 1] is '\\'
         backlog = "#{backlog[...-1]}\n"
-        @rli.setPrompt REPL_PROMPT_CONTINUATION
-        @rli.prompt()
+        rli.setPrompt REPL_PROMPT_CONTINUATION
+        rli.prompt()
         return
-      @rli.setPrompt REPL_PROMPT
+      rli.setPrompt REPL_PROMPT
       backlog = ''
       try
-        _ = global._
-        returnValue = @eval(code)
-        if returnValue is undefined
-          global._ = _
-        @rli.output.write "#{inspect returnValue, no, 2, enableColours}\n"
-      catch err
-        error err
-      @rli.prompt()
+        @eval code, null, 'repl', 'repl', (err, returnValue) =>
+          return error(err) if err?
+          global[@lastValueKey] = returnValue unless returnValue is undefined
+          rli.output.write "#{inspect returnValue, no, 2, enableColours}\n"
+      rli.prompt()
     
   start: ->
     @rli.setPrompt REPL_PROMPT

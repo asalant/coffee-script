@@ -41,3 +41,27 @@ test "variables are saved", ->
     "'foo'"
     "'foobar'"
   ]
+
+test "undefined does not assign to last value", ->
+  input = [
+    "1"
+    "undefined"
+    "_"
+  ]
+  testCommands input, [
+    "1"
+    "undefined"
+    "1"
+  ]
+
+test "null does assign to last value", ->
+  input = [
+    "1"
+    "null"
+    "_"
+  ]
+  testCommands input, [
+    "1"
+    "null"
+    "null"
+  ]
