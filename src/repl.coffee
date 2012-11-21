@@ -4,10 +4,6 @@
 #
 #     coffee> console.log "#{num} bottles of beer" for num in [99..1]
 
-# Start by opening up `stdin` and `stdout`.
-stdin = process.openStdin()
-stdout = process.stdout
-
 # Require the **coffee-script** module to get access to the compiler.
 CoffeeScript = require './coffee-script'
 readline     = require 'readline'
@@ -25,8 +21,8 @@ enableColours = no
 unless process.platform is 'win32'
   enableColours = not process.env.NODE_DISABLE_COLORS
 
-# Log an error.
-error = (err) ->
+# Make sure that uncaught exceptions don't kill the REPL.
+process.on 'uncaughtException', (err) ->
   stdout.write (err.stack or err.toString()) + '\n'
 
 ## Autocompletion
@@ -72,9 +68,6 @@ completeVariable = (text) ->
 getCompletions = (prefix, candidates) ->
   el for el in candidates when 0 is el.indexOf prefix
 
-# Make sure that uncaught exceptions don't kill the REPL.
-process.on 'uncaughtException', error
-
 
 class REPLServer
 
@@ -82,6 +75,9 @@ class REPLServer
     multilineMode = off
     # The current backlog of multi-line code.
     backlog = ''
+
+    @input = options.input or process.openStdin()
+    @output = options.output or process.stdout
 
     # Context property name to storage last value. '_' by default
     @lastValueKey = options.lastValueKey or '_'
@@ -99,10 +95,11 @@ class REPLServer
       catch err
         callback err
 
-    @rli = rli = if stdin.readable and stdin.isRaw
-      @createPipedInterface(stdin)
+    @rli = rli = if @input.readable and @input.isRaw
+      # Handle piped input
+      @createPipedInterface(@input, @output)
     else
-      @createReadlineInterface()
+      @createReadlineInterface(@input, @output)
 
     # Handle multi-line mode switch
     rli.input.on 'keypress', (char, key) ->
@@ -172,7 +169,7 @@ class REPLServer
       backlog = ''
       try
         @eval code, null, 'repl', 'repl', (err, returnValue) =>
-          return error(err) if err?
+          return @error(err) if err?
           global[@lastValueKey] = returnValue unless returnValue is undefined
           rli.output.write "#{inspect returnValue, no, 2, enableColours}\n"
       rli.prompt()
@@ -181,39 +178,40 @@ class REPLServer
     @rli.setPrompt REPL_PROMPT
     @rli.prompt()
 
-  # handle piped input
-  createPipedInterface: (stdin) ->
+  error: (err) ->
+    @output.write (err.stack or err.toString()) + '\n'
+
+  createPipedInterface: (input, output) ->
     pipedInput = ''
-    piped =
-      prompt: -> stdout.write @_prompt
+    pipedInterface =
+      prompt: -> output.write @_prompt
       setPrompt: (p) -> @_prompt = p
-      input: stdin
-      output: stdout
+      input: input
+      output: output
       on: ->
-    stdin.on 'data', (chunk) =>
+    input.on 'data', (chunk) =>
       pipedInput += chunk
       return unless /\n/.test pipedInput
       lines = pipedInput.split "\n"
       pipedInput = lines[lines.length - 1]
       for line in lines[...-1] when line
-        stdout.write "#{line}\n"
+        output.write "#{line}\n"
         @run line
       return
-    stdin.on 'end', =>
+    input.on 'end', =>
       for line in pipedInput.trim().split "\n" when line
-        stdout.write "#{line}\n"
+        output.write "#{line}\n"
         @run line
-      stdout.write '\n'
+      output.write '\n'
       process.exit 0
-    return piped
+    return pipedInterface
 
-  # Create the REPL by listening to **stdin**.
-  createReadlineInterface: ->
+  createReadlineInterface: (input, output) ->
     if readline.createInterface.length < 3
-      rli = readline.createInterface stdin, autocomplete
-      stdin.on 'data', (buffer) -> rli.write buffer
+      rli = readline.createInterface input, autocomplete
+      output.on 'data', (buffer) -> rli.write buffer
     else
-      rli = readline.createInterface stdin, stdout, autocomplete
+      rli = readline.createInterface input, output, autocomplete
     return rli
 
 new REPLServer().start()
