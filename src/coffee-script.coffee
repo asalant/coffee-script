@@ -29,6 +29,9 @@ exports.RESERVED = RESERVED
 # Expose helpers for testing.
 exports.helpers = require './helpers'
 
+# Expose the REPL for others to use
+exports.repl = require './repl'
+
 # Compile a string of CoffeeScript code to JavaScript, using the Coffee/Jison
 # compiler.
 exports.compile = compile = (code, options = {}) ->
