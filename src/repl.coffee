@@ -89,7 +89,7 @@ class REPLServer
         returnValue = CoffeeScript.eval "(#{code}\n)", {
           filename: filename
           modulename: modulename
-          sandbox: context
+          sandbox: null # Ignore context because CoffeeScript.eval doesn't wire up global properly if passed here
         }
         callback null, returnValue
       catch err
@@ -168,11 +168,16 @@ class REPLServer
       rli.setPrompt REPL_PROMPT
       backlog = ''
       try
-        @eval code, null, 'repl', 'repl', (err, returnValue) =>
-          return @error(err) if err?
-          global[@lastValueKey] = returnValue unless returnValue is undefined
-          rli.output.write "#{inspect returnValue, no, 2, enableColours}\n"
-      rli.prompt()
+        @eval code, global, 'repl', 'repl', (err, returnValue) =>
+          if err?
+            @error err
+          else
+            global[@lastValueKey] = returnValue unless returnValue is undefined
+            rli.output.write "#{inspect returnValue, no, 2, enableColours}\n"
+          rli.prompt()
+      catch err
+        @error err
+        rli.prompt()
     
   start: ->
     @rli.setPrompt REPL_PROMPT
@@ -217,5 +222,5 @@ class REPLServer
 module.exports =
   REPLServer: REPLServer
 
-  start: ->
-    new REPLServer().start()
+  start: (options) ->
+    new REPLServer(options).start()
